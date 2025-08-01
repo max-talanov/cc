@@ -3,9 +3,6 @@ the repository for thalamo-cortical loop modelling
 ![](CC.png)
 
 
-Вот пример README-файла, который подойдёт для репозитория с моделированием кортикальной колонки в NEURON:
-
----
 
 # 🧠 Cortical Column Simulation (NEURON + Python)
 
