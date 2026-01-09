@@ -1,0 +1,73 @@
+# Biologically Realistic Network Configuration
+# Scaled up for more realistic population sizes
+# Based on cortical column anatomy estimates
+#
+# References:
+# - Markram et al. (2015) - Blue Brain Project column
+# - Traub et al. (2005) - Thalamocortical model
+#
+# Total neurons: ~1,700 (compared to ~106 in default)
+
+network:
+  # Thalamus (~100 neurons)
+  # TCR: thalamocortical relay cells - main excitatory projection
+  # nRT: reticular nucleus - provides feedforward inhibition
+  thalamus:
+    E: 80    # TCR neurons
+    I: 20    # nRT neurons
+  
+  # Layer 4 - primary thalamic input layer (~300 neurons)
+  # Spiny stellate cells receive direct thalamic input
+  # Dense local inhibition for gain control
+  L4:
+    E: 240   # Spiny stellate cells
+    I: 60    # LTS interneurons
+  
+  # Layer 2/3 - superficial processing layers (~300 neurons)
+  # Pyramidal cells: RS (regular spiking) + FRB (fast rhythmic bursting)
+  # Interneurons: Basket, LTS, Axoaxonic types
+  L23:
+    E: 240   # Pyramidal (RS + FRB, split evenly)
+    I: 60    # Basket, LTS, Axoaxonic (split by 3)
+  
+  # Layer 5 - main output layer (~250 neurons)
+  # Large pyramidal cells project to subcortical targets
+  # TuftRS: regular spiking tufted
+  # TuftIB: intrinsically bursting tufted
+  L5:
+    E: 200   # Pyramidal (TuftRS + TuftIB)
+    I: 50    # Shared interneuron pool with L6
+  
+  # Layer 6 - corticothalamic feedback layer (~200 neurons)
+  # Projects back to thalamus, modulating relay activity
+  L6:
+    E: 160   # Non-tufted pyramidal
+    I: 40    # Shared interneuron pool with L5
+
+# Subgroup splits (cell type diversity within populations)
+# These divide the E/I populations into functional subtypes
+splits:
+  L23_E: 2      # RS and FRB pyramidal subtypes
+  L23_I: 3      # Basket, LTS, Axoaxonic interneuron subtypes
+  L4_E: 1       # Single spiny stellate type
+  L4_I: 1       # Single LTS type
+  L5_E: 2       # TuftRS and TuftIB subtypes
+  L56_I: 3      # Basket, LTS, Axoaxonic (shared L5/L6 pool)
+  L6_E: 1       # Single non-tufted type
+
+# Simulation parameters
+simulation:
+  tstop: 200.0  # ms - simulation duration
+  dt: 0.025     # ms - integration timestep (40 kHz)
+  v_init: -65   # mV - initial membrane potential
+
+# Population summary:
+# Layer     | E neurons | I neurons | Total
+# ----------|-----------|-----------|-------
+# Thalamus  |    80     |    20     |  100
+# L4        |   240     |    60     |  300
+# L2/3      |   240     |    60     |  300
+# L5        |   200     |    50     |  250
+# L6        |   160     |    40     |  200
+# ----------|-----------|-----------|-------
+# TOTAL     |   920     |   230     | 1150

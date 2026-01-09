@@ -1,0 +1,35 @@
+network:
+  thalamus:
+    E: 5    # TCR (thalamocortical relay) neurons
+    I: 1    # nRT (reticular nucleus) neurons
+    # TODO: increase later
+  
+  L4:
+    E: 24   # Spiny stellate cells
+    I: 6    # LTS interneurons
+  
+  L23:
+    E: 24   # Pyramidal (RS + FRB types, split evenly)
+    I: 6    # Per type: Basket, LTS, Axoaxonic
+  
+  L5:
+    E: 20   # Pyramidal (TuftRS + TuftIB types, split evenly)
+    I: 5    # Shared with L6
+  
+  L6:
+    E: 16   # Non-tufted pyramidal
+    I: 4    # Shared with L5
+
+splits:
+  L23_E: 2      # RS and FRB subtypes
+  L23_I: 3      # Basket, LTS, Axoaxonic
+  L4_E: 1
+  L4_I: 1
+  L5_E: 2       # TuftRS and TuftIB
+  L56_I: 3      # Basket, LTS, Axoaxonic (shared L5/L6)
+  L6_E: 1
+
+simulation:
+  tstop: 200.0  # ms # TODO: 5ms for a single spike, analyze densities
+  dt: 0.025     # TODO: find that lib for GPU
+  v_init: -65   # mV (initial membrane potential)
