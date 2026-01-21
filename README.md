@@ -51,7 +51,7 @@ Installation of dependencies:
 pip install numpy matplotlib
 ```
 
-Установка NEURON см. в [официальной документации](https://neuron.yale.edu/neuron/download).
+NEURON installation: [official documents](https://neuron.yale.edu/neuron/download).
 
 ---
 
