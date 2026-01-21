@@ -19,14 +19,14 @@ We model the thalamo-cortical loop using the [NEURON](https://neuron.yale.edu/ne
 | `connect_functions.py`     | Contains functions of neurons connection: `connect_exc` (excitatory projections) and `connect_inh` (inhibitory).           |
 | `create_connections.py`    | Setup synaptic connections between all neuronal groups (thalamus, cortical layers).                                        |
 | `thalamus_stimulation.py`  | Exeternal stimulation of neurons of thalamus via `NetStim`.                                                                |
-| `visualization.py`         | Реализует визуализацию результатов: мембранные потенциалы, спайки, тепловые карты активности и др.                         |
+| `visualization.py`         | Results visualisation: membraine potentials, spike times, heatmaps etc.                                                    |
 
 ---
 
-## 🧠 Биологические компоненты
+## 🧠 Biological components
 
-* **TCR (Thalamocortical relay cells)** — возбуждающие нейроны таламуса
-* **nRT (nucleus Reticularis Thalami)** — ингибирующие нейроны таламуса
+* **TCR (Thalamocortical relay cells)** — thalamus excitatory neurons
+* **nRT (nucleus Reticularis Thalami)** — thalamus inhibitory neurons
 * **Cortical layers**:
 
   * L2/3 SyppyrRS
@@ -38,14 +38,14 @@ We model the thalamo-cortical loop using the [NEURON](https://neuron.yale.edu/ne
 
 ---
 
-## ⚙️ Зависимости
+## ⚙️ Dependencies
 
 * Python 3.8+
 * [NEURON](https://www.neuron.yale.edu/neuron/download)
 * `numpy`
 * `matplotlib`
 
-Установить зависимости можно через:
+Installation of dependencies:
 
 ```bash
 pip install numpy matplotlib
