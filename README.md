@@ -55,7 +55,7 @@ NEURON installation: [official documents](https://neuron.yale.edu/neuron/downloa
 
 ---
 
-## 🚀 Запуск
+## 🚀 Run
 
 Run the main script:
 
