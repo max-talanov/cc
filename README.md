@@ -1,4 +1,4 @@
-# cc
+# Thalamo-cortical loop
 the repository for thalamo-cortical loop modelling
 ![](CC.png)
 
@@ -10,7 +10,7 @@ We model the thalamo-cortical loop using the [NEURON](https://neuron.yale.edu/ne
 
 ---
 
-## 📁 Содержимое проекта
+## 📁 Project contents
 
 | Файл                       | Назначение                                                                                                                 |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
