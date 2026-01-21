@@ -18,7 +18,7 @@ We model the thalamo-cortical loop using the [NEURON](https://neuron.yale.edu/ne
 | `create_HHNeuron_group.py` | Defines Neuron class `HHNeuron` (Hodgkin-Huxley) and groups of neurons creation functions.                                 |
 | `connect_functions.py`     | Contains functions of neurons connection: `connect_exc` (excitatory projections) and `connect_inh` (inhibitory).           |
 | `create_connections.py`    | Setup synaptic connections between all neuronal groups (thalamus, cortical layers).                                        |
-| `thalamus_stimulation.py`  | Создаёт внешнюю стимуляцию для таламических возбуждающих нейронов через `NetStim`.                                         |
+| `thalamus_stimulation.py`  | Exeternal stimulation of neurons of thalamus via `NetStim`.                                                                |
 | `visualization.py`         | Реализует визуализацию результатов: мембранные потенциалы, спайки, тепловые карты активности и др.                         |
 
 ---
