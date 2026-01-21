@@ -15,7 +15,7 @@ We model the thalamo-cortical loop using the [NEURON](https://neuron.yale.edu/ne
 | File                       | Description                                                                                                                |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `cortical_column.py`       | Main script of the simulation: imports all submodules and runs simulation and does visualisation.                          |
-| `create_HHNeuron_group.py` | Определяет класс `HHNeuron` (на базе Hodgkin-Huxley) и функции для создания групп нейронов.                                |
+| `create_HHNeuron_group.py` | Defines Neuron class `HHNeuron` (Hodgkin-Huxley) and groups of neurons creation functions.                                 |
 | `connect_functions.py`     | Содержит функции для подключения нейронов: `connect_exc` (возбуждающие связи) и `connect_inh` (ингибирующие).              |
 | `create_connections.py`    | Настраивает синаптические соединения между всеми нейронными группами (таламус, кортикальные слои).                         |
 | `thalamus_stimulation.py`  | Создаёт внешнюю стимуляцию для таламических возбуждающих нейронов через `NetStim`.                                         |
