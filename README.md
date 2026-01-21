@@ -6,7 +6,7 @@ the repository for thalamo-cortical loop modelling
 
 # 🧠 Cortical Column Simulation (NEURON + Python)
 
-Этот проект моделирует простую **кортикальную колонку**, включая **таламус** и **кортикальные нейроны** с использованием библиотеки [NEURON](https://neuron.yale.edu/neuron/). Сеть состоит из возбуждающих и тормозных нейронов, между которыми создаются связи, моделируются синаптические взаимодействия и визуализируются данные активности.
+We model the thalamo-cortical loop using the [NEURON](https://neuron.yale.edu/neuron/) neurosimulator. We model excitatory and inhibitory neurons and visualise there activities.
 
 ---
 
