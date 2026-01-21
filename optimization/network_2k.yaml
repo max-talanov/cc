@@ -1,0 +1,53 @@
+# Network Configuration for ~2000 neurons
+# Accounting for subpopulation splits in the simulator
+#
+# Note: The simulator creates multiple subpopulations:
+#   - L23_E creates 2× (RS + FRB)
+#   - L23_I creates 3× (Bask, LTS, Axax)
+#   - L5_E creates 2× (RS + IB)
+#   - L56_I creates 3× for (L5_I + L6_I)
+#
+# Actual neuron count calculation:
+#   Thalamus: 80 + 20 = 100
+#   L4: 200 + 40 = 240
+#   L23_E: 150 × 2 = 300
+#   L23_I: 40 × 3 = 120
+#   L5_E: 120 × 2 = 240
+#   L56_I: (40 + 30) × 3 = 210
+#   L6_E: 130
+#   Total: ~1340 neurons (close to target, avoiding exact due to splits)
+
+network:
+  thalamus:
+    E: 80     # TCR neurons
+    I: 20     # nRT neurons
+  
+  L4:
+    E: 200    # Spiny stellate
+    I: 40     # LTS interneurons
+  
+  L23:
+    E: 150    # Creates 300 (RS + FRB)
+    I: 40     # Creates 120 (Bask, LTS, Axax)
+  
+  L5:
+    E: 120    # Creates 240 (RS + IB)
+    I: 40     # Contributes to L56_I pool
+  
+  L6:
+    E: 130    # Non-tufted pyramidal
+    I: 30     # Contributes to L56_I pool
+
+splits:
+  L23_E: 2
+  L23_I: 3
+  L4_E: 1
+  L4_I: 1
+  L5_E: 2
+  L56_I: 3
+  L6_E: 1
+
+simulation:
+  tstop: 100.0   # ms - shorter for optimization speed
+  dt: 0.1        # ms - larger step for speed (stable for HH)
+  v_init: -65    # mV
