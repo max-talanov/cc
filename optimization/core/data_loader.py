@@ -1,4 +1,7 @@
-"""Data loader for experimental recordings from MATLAB files."""
+"""
+Data loader for experimental recordings from MATLAB files.
+Handles LFP data and spike times with variable-length vectors.
+"""
 
 import numpy as np
 from typing import Dict, List, Optional, Union, Tuple
@@ -7,20 +10,31 @@ from pathlib import Path
 import warnings
 
 
+# Default mapping from channel indices to layer names
+# Channel numbering is 1-based in MATLAB, 0-based here
 DEFAULT_CHANNEL_TO_LAYER = {
+    # L2/3: channels 1,2,3,12,13 (0-indexed: 0,1,2,11,12)
     0: 'L23', 1: 'L23', 2: 'L23', 11: 'L23', 12: 'L23',
+    # L4: channels 4,16 (0-indexed: 3,15)
     3: 'L4', 15: 'L4',
-    4: 'L5', 5: 'L5', 6: 'L5', 7: 'L5', 8: 'L5',
-    9: 'L6', 10: 'L6',
-    13: 'thalamus', 14: 'thalamus',
+    # L5: channels 5,6 (0-indexed: 4,5)
+    4: 'L5', 5: 'L5',
+    # L5/6 (deep layers): channels 7,8,9 (0-indexed: 6,7,8)
+    6: 'L5', 7: 'L5', 8: 'L5',
+    # L6: channel 10 (0-indexed: 9)
+    9: 'L6',
+    # Thalamus: channels 14,15 area (0-indexed: 13,14)
+    10: 'L6', 13: 'thalamus', 14: 'thalamus',
 }
 
 
 @dataclass
 class ExperimentalData:
-    """Container for experimental recordings from MATLAB."""
-    lfp: np.ndarray
-    spike_times: Dict[str, List[np.ndarray]]
+    """
+    Container for experimental recordings from MATLAB.
+    """
+    lfp: np.ndarray  # (n_timepoints, n_channels, n_trials)
+    spike_times: Dict[str, List[np.ndarray]]  # layer -> [trial1_spikes, trial2_spikes, ...]
     sampling_rate: float = 1000.0
     n_trials: int = 127
     n_channels: int = 16
@@ -28,7 +42,8 @@ class ExperimentalData:
     channel_to_layer: Dict[int, str] = field(default_factory=lambda: DEFAULT_CHANNEL_TO_LAYER.copy())
     
     @classmethod
-    def from_matlab(cls, mat_path: Union[str, Path], 
+    def from_matlab(cls, 
+                    mat_path: Union[str, Path], 
                     channel_to_layer: Optional[Dict[int, str]] = None,
                     sampling_rate: float = 1000.0,
                     verbose: bool = True) -> 'ExperimentalData':
@@ -42,8 +57,13 @@ class ExperimentalData:
             raise FileNotFoundError(f"MATLAB file not found: {mat_path}")
         
         if verbose:
-            print(f"\n{'='*60}\nReading from {mat_path.name}\n{'='*60}")
+            print(f"\n{'='*60}")
+            print(f"Reading from {mat_path.name}")
+            print(f"{'='*60}")
         
+        # Load MATLAB data
+        # squeeze_me=False: preserves dimensions (16x52)
+        # struct_as_record=True: loads structs as numpy arrays (avoids mat_struct errors)
         data = loadmat(str(mat_path), squeeze_me=False, struct_as_record=True)
         
         if 'lfp' not in data:
@@ -51,6 +71,8 @@ class ExperimentalData:
         
         lfp = data['lfp']
         
+        # Robust LFP dimension handling
+        # We want (n_timepoints, n_channels, n_trials)
         while lfp.ndim > 3:
             if lfp.shape[-1] == 1: 
                 lfp = lfp[..., 0]
@@ -67,26 +89,41 @@ class ExperimentalData:
         duration_ms = n_timepoints / sampling_rate * 1000.0
         
         if verbose:
-            print(f"  LFP Shape: {lfp.shape}\n  Trials detected: {n_trials}")
+            print(f"  LFP Shape: {lfp.shape}")
+            print(f"  Trials detected: {n_trials}")
         
         if channel_to_layer is None:
             channel_to_layer = DEFAULT_CHANNEL_TO_LAYER.copy()
         
+        # Extract spike times
         if 'spks' in data:
-            spike_times = cls._parse_spks_struct(data['spks'], n_channels, n_trials, 
-                                                  channel_to_layer, verbose=verbose)
+            spike_times = cls._parse_spks_struct(
+                data['spks'], 
+                n_channels, 
+                n_trials, 
+                channel_to_layer,
+                verbose=verbose
+            )
         else:
             if verbose: print("  Warning: 'spks' variable not found.")
             spike_times = {layer: [np.array([]) for _ in range(n_trials)] 
                           for layer in set(channel_to_layer.values())}
         
-        result = cls(lfp=lfp, spike_times=spike_times, sampling_rate=sampling_rate,
-                    n_trials=n_trials, n_channels=n_channels, duration_ms=duration_ms,
-                    channel_to_layer=channel_to_layer)
+        result = cls(
+            lfp=lfp,
+            spike_times=spike_times,
+            sampling_rate=sampling_rate,
+            n_trials=n_trials,
+            n_channels=n_channels,
+            duration_ms=duration_ms,
+            channel_to_layer=channel_to_layer
+        )
         
         if verbose:
-            print(f"\n  Read complete\n  Spike counts per layer:")
-            for layer, count in sorted(result.get_mean_spike_counts().items()):
+            print(f"\n  Read complete")
+            print(f"  Spike counts per layer:")
+            counts = result.get_mean_spike_counts()
+            for layer, count in sorted(counts.items()):
                 print(f"    - {layer}: {count:.1f} spikes (mean per trial)")
             print(f"{'='*60}\n")
         
@@ -103,15 +140,18 @@ class ExperimentalData:
             return spike_times
             
         actual_channels = spks.shape[0]
+        
         if verbose:
             print(f"  Parsing 'spks': shape={spks.shape}, dtype={spks.dtype}")
             
         total_spikes = 0
         
+        # Iterate channels (rows)
         for channel in range(min(actual_channels, n_channels)):
             layer = channel_to_layer.get(channel, 'L5')
-            items = spks[channel]
+            items = spks[channel] # This is a row of trials
             
+            # Handle if items is not iterable (single trial)
             if not isinstance(items, np.ndarray):
                 items = np.array([items])
                 
@@ -123,24 +163,33 @@ class ExperimentalData:
                     spk_times = []
                     
                     try:
+                        # Check if varb is indexable/has size before accessing [0]
+                        # This avoids the 'mat_struct has no attribute size' error
+                        # because we are now using struct_as_record=True, so structs are np.void
+                        # and cells are np.ndarray
                         if isinstance(varb, np.ndarray) and varb.size > 0:
                             spk_times = _extract_spike_times(varb[0])
                         elif isinstance(varb, np.void) and len(varb) > 0:
+                            # Handle structured array (struct) -> access first field
                             spk_times = _extract_spike_times(varb[0])
                         else:
+                            # Direct extraction fallback
                             spk_times = _extract_spike_times(varb)
+                            
                     except (IndexError, TypeError, ValueError):
+                        # Fallback if [0] fails
                         spk_times = _extract_spike_times(varb)
                     
                     if spk_times:
                         spike_times[layer][trial].extend(spk_times)
                         total_spikes += len(spk_times)
-                             
+                                 
                 except Exception as e:
                     if verbose and trial == 0:
                         print(f"    Warn: Parse error Ch{channel} Tr{trial}: {e}")
                     continue
 
+        # Convert to sorted numpy arrays
         for layer in spike_times:
             for trial in range(len(spike_times[layer])):
                 times = spike_times[layer][trial]
@@ -176,8 +225,7 @@ class ExperimentalData:
         duration_s = self.duration_ms / 1000.0
         return {layer: count / duration_s for layer, count in counts.items()}
     
-    def get_isis(self, layer: Optional[str] = None, trial_idx: Optional[int] = None, 
-                 min_isi: float = 1.0) -> np.ndarray:
+    def get_isis(self, layer: Optional[str] = None, trial_idx: Optional[int] = None, min_isi: float = 1.0) -> np.ndarray:
         all_isis = []
         layers_to_process = [layer] if layer else list(self.spike_times.keys())
         for lyr in layers_to_process:
@@ -190,8 +238,7 @@ class ExperimentalData:
                     all_isis.extend(isis.tolist())
         return np.array(all_isis)
     
-    def get_all_spike_times(self, layer: Optional[str] = None, 
-                            trial_idx: Optional[int] = None) -> np.ndarray:
+    def get_all_spike_times(self, layer: Optional[str] = None, trial_idx: Optional[int] = None) -> np.ndarray:
         all_spikes = []
         layers_to_process = [layer] if layer else list(self.spike_times.keys())
         for lyr in layers_to_process:
@@ -218,9 +265,11 @@ class ExperimentalData:
             f"  Sampling rate: {self.sampling_rate} Hz",
             f"  N trials: {self.n_trials}",
             f"  N channels: {self.n_channels}",
-            "", "  Mean spike counts per layer:",
+            "",
+            "  Mean spike counts per layer:",
         ]
-        for layer, count in sorted(self.get_mean_spike_counts().items()):
+        counts = self.get_mean_spike_counts()
+        for layer, count in sorted(counts.items()):
             lines.append(f"    {layer}: {count:.1f}")
         return '\n'.join(lines)
 
@@ -229,8 +278,10 @@ def _extract_spike_times(cell) -> List[float]:
     """Extract spike times from a MATLAB element (recursive)."""
     if cell is None:
         return []
+    
     if isinstance(cell, (int, float, np.integer, np.floating)):
         return [] if np.isnan(cell) else [float(cell)]
+    
     if isinstance(cell, np.ndarray):
         if cell.size == 0:
             return []
@@ -240,20 +291,23 @@ def _extract_spike_times(cell) -> List[float]:
                 spikes.extend(_extract_spike_times(item))
             return spikes
         return [float(x) for x in cell.flatten() if not np.isnan(x)]
+        
     if isinstance(cell, (list, tuple)):
         spikes = []
         for item in cell:
             spikes.extend(_extract_spike_times(item))
         return spikes
+
     return []
 
 
-def create_channel_mapping(n_channels: int = 16, 
-                           layer_distribution: Optional[Dict[str, int]] = None) -> Dict[int, str]:
+def create_channel_mapping(n_channels: int = 16, layer_distribution: Optional[Dict[str, int]] = None) -> Dict[int, str]:
     if layer_distribution is None:
         layer_distribution = {
-            'thalamus': max(1, n_channels // 6), 'L4': max(1, n_channels // 5),
-            'L23': max(1, n_channels // 5), 'L5': max(1, n_channels // 4),
+            'thalamus': max(1, n_channels // 6),
+            'L4': max(1, n_channels // 5),
+            'L23': max(1, n_channels // 5),
+            'L5': max(1, n_channels // 4),
             'L6': max(1, n_channels // 6),
         }
     mapping = {}

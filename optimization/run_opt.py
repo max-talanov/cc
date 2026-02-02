@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""
-Main script for SNN hyperparameter optimization.
-
-Usage:
-    python run_opt.py --method ga --generations 30 --save-dir results/
-    python run_opt.py --method bo --iterations 50 --save-dir results/
-    python run_opt.py --method compare --budget 50 --save-dir results/
-"""
-
 import argparse
 import json
 import numpy as np
@@ -28,7 +19,7 @@ from methods.genetic import run_ga, run_nsga3, GAConfig, GeneticAlgorithm
 from methods.bayesian import run_bayesian_optimization, BOConfig, BayesianOptimizer
 
 
-def _create_objective_from_args(args):
+def _create_objective_from_args(args, sim_duration_ms: float = 100.0):
     objective_type = getattr(args, 'objective', 'rule-based')
     
     if objective_type == 'rule-based':
@@ -42,10 +33,10 @@ def _create_objective_from_args(args):
     try:
         from core.data_loader import ExperimentalData
         exp_data = ExperimentalData.from_matlab(data_file, verbose=True)
-        print(f"✓ Successfully loaded experimental data: {exp_data.n_trials} trials, "
+        print(f"Successfully loaded experimental data: {exp_data.n_trials} trials, "
               f"{exp_data.n_channels} channels, {exp_data.duration_ms:.1f} ms duration")
+        print(f"  Simulation duration: {sim_duration_ms:.1f} ms (scaling factor: {exp_data.duration_ms/sim_duration_ms:.1f}x)")
     except Exception as e:
-        print(f"✗ Error loading data file: {e}")
         import traceback
         traceback.print_exc()
         print("Falling back to rule-based objective.")
@@ -54,10 +45,12 @@ def _create_objective_from_args(args):
     trial_idx = getattr(args, 'trial_idx', None)
     
     if objective_type == 'supervised':
-        return SupervisedObjective(experimental_data=exp_data, trial_idx=trial_idx)
+        return SupervisedObjective(experimental_data=exp_data, trial_idx=trial_idx,
+                                   duration_ms=sim_duration_ms)
     elif objective_type == 'hybrid':
         return HybridObjective(experimental_data=exp_data,
-                              supervised_weight=getattr(args, 'supervised_weight', 0.5), trial_idx=trial_idx)
+                              supervised_weight=getattr(args, 'supervised_weight', 0.5), 
+                              trial_idx=trial_idx, duration_ms=sim_duration_ms)
     return ObjectiveFunction()
 
 
@@ -89,7 +82,8 @@ def run_with_visualization(args, optimization_fn, method_name: str):
     else:
         print(f"CPU MODE: {sim_config.num_threads} threads")
     
-    objective = _create_objective_from_args(args)
+    # Pass simulation duration to objective for proper scaling
+    objective = _create_objective_from_args(args, sim_duration_ms=network_config.tstop)
     
     print("\n" + "=" * 60 + "\nNETWORK CONFIGURATION\n" + "=" * 60)
     print(f"Config file: {args.config if args.config else '(using defaults)'}")

@@ -332,12 +332,3 @@ def run_bayesian_optimization(param_space: Optional[ParameterSpace] = None,
                                       network_config=network_config, sim_config=sim_config, conn_prob=conn_prob)
     return optimizer.optimize()
 
-
-if __name__ == "__main__":
-    from core.parameters import get_reduced_parameter_space
-    print("Testing Bayesian Optimization with reduced parameter space...")
-    result = run_bayesian_optimization(param_space=get_reduced_parameter_space(),
-                                        n_iterations=20, n_initial=5, seed=42)
-    print(f"\nBest parameters found:")
-    for name, value in result.best_params.items():
-        print(f"  {name}: {value:.6f}")

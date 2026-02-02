@@ -35,8 +35,10 @@ class ObjectiveFunction:
                  weights: Optional[Dict[str, float]] = None):
         self.target = target or TargetBehavior()
         self.weights = weights or {
-            'latency_sequence': 1.0, 'latency_timing': 0.5,
-            'firing_rate': 0.3, 'activity': 0.2,
+            'latency_sequence': 1.0, 
+            'latency_timing': 0.5,
+            'firing_rate': 0.05,
+            'activity': 0.5,
         }
     
     def __call__(self, spike_data: Dict[str, np.ndarray]) -> float:
@@ -106,19 +108,55 @@ class ObjectiveFunction:
                 error += (rate - max_rate) ** 2 / 100
         return error
     
-    def _activity_error(self, spike_data: Dict[str, np.ndarray]) -> float:
+    def _activity_error(self, spike_data: Dict[str, np.ndarray], duration_ms: float = 100.0) -> float:
+        """
+        Ensure network maintains SUSTAINED activity with multiple response events.
+        """
         error = 0.0
         total_spikes = sum(len(s) for s in spike_data.values())
         
         if total_spikes == 0:
-            error += 1000.0
-        elif total_spikes > 5000:
-            error += (total_spikes - 5000) / 100
+            return 1e6  # Dead network
         
-        for layer, spikes in spike_data.items():
-            if len(spikes) == 0 and total_spikes > 10:
-                error += 20.0
+        # Count thalamic burst events
+        thal_spikes = spike_data.get('thalamus', np.array([]))
+        n_thal_bursts = self._count_bursts(thal_spikes) if len(thal_spikes) > 0 else 0
+        
+        # Require cortical layers to respond to at least 2 events
+        min_responses = max(2, n_thal_bursts // 2) if n_thal_bursts > 0 else 2
+        
+        cortical_layers = ['L4', 'L23', 'L5', 'L6']
+        for layer in cortical_layers:
+            if layer not in spike_data:
+                error += 1e5
+                continue
+                
+            spikes = spike_data[layer]
+            if len(spikes) == 0:
+                error += 1e5
+                continue
+            
+            # Count response events in this layer
+            n_responses = self._count_bursts(spikes)
+            
+            if n_responses < min_responses:
+                missing = min_responses - n_responses
+                error += 1e4 * (2 ** missing)
+        
         return error
+    
+    def _count_bursts(self, spikes: np.ndarray, cluster_window: float = 15.0) -> int:
+        """Count distinct burst/event times."""
+        if len(spikes) == 0:
+            return 0
+        sorted_spikes = np.sort(spikes)
+        n_bursts = 1
+        last_burst_time = sorted_spikes[0]
+        for spike in sorted_spikes[1:]:
+            if spike - last_burst_time > cluster_window:
+                n_bursts += 1
+                last_burst_time = spike
+        return n_bursts
 
 
 class MultiObjective:
@@ -145,40 +183,73 @@ class MultiObjective:
 class SupervisedObjective:
     """Compares simulation to experimental recordings using KS tests."""
     
+    # Layers to exclude from supervised comparison (thalamus is input driver in model,
+    # not directly comparable to experimental thalamus recordings)
+    EXCLUDED_LAYERS = {'thalamus'}
+    
     def __init__(self, experimental_data: 'ExperimentalData', trial_idx: Optional[int] = None,
-                 weights: Optional[Dict[str, float]] = None, duration_ms: float = 200.0):
+                 weights: Optional[Dict[str, float]] = None, duration_ms: float = 100.0,
+                 excluded_layers: Optional[set] = None):
         self.data = experimental_data
         self.trial_idx = trial_idx
-        self.duration_ms = duration_ms
+        self.duration_ms = duration_ms  # Simulation duration (for rate scaling)
+        self.experimental_duration_ms = experimental_data.duration_ms  # Experimental duration
+        self.excluded_layers = excluded_layers if excluded_layers is not None else self.EXCLUDED_LAYERS
+
         self.weights = weights or {
-            'isi_ks': 0.35, 'spike_ks': 0.25, 'spike_count': 0.2,
-            'firing_rate': 0.1, 'lfp_correlation': 0.1,
+            'isi_ks': 0.5,           # ISI distribution (scale-independent)
+            'spike_ks': 0.4,         # Spike timing distribution (scale-independent)  
+            'spike_count': 0.0,      # DISABLED - count mismatch between recording vs simulation
+            'firing_rate': 0.0,      # DISABLED - same issue
+            'lfp_correlation': 0.1,
         }
+        # Duration ratio for scaling spike counts (experimental / simulation)
+        self._duration_ratio = self.experimental_duration_ms / self.duration_ms
         self._target_spike_counts = self._compute_target_spike_counts()
         self._target_firing_rates = self._compute_target_firing_rates()
         self._target_spike_histograms = self._compute_target_histograms()
         self._target_isis = self._compute_target_isis()
         self._target_spike_times = self._compute_target_spike_times()
     
+    def _get_comparable_layers(self) -> set:
+        """Get layers that should be compared (excluding thalamus etc.)."""
+        return set(self.data.spike_times.keys()) - self.excluded_layers
+    
     def _compute_target_isis(self) -> Dict[str, np.ndarray]:
         return {layer: self.data.get_isis(layer=layer, trial_idx=self.trial_idx)
-                for layer in self.data.spike_times}
+                for layer in self._get_comparable_layers()}
     
     def _compute_target_spike_times(self) -> Dict[str, np.ndarray]:
-        return {layer: self.data.get_all_spike_times(layer=layer, trial_idx=self.trial_idx)
-                for layer in self.data.spike_times}
+        # Normalize spike times to [0, 1] range for duration-independent comparison
+        result = {}
+        for layer in self._get_comparable_layers():
+            spikes = self.data.get_all_spike_times(layer=layer, trial_idx=self.trial_idx)
+            # Normalize to [0, 1] for KS test (duration-independent)
+            if len(spikes) > 0:
+                result[layer] = spikes / self.experimental_duration_ms
+            else:
+                result[layer] = spikes
+        return result
     
     def _compute_target_spike_counts(self) -> Dict[str, float]:
+        """Compute target spike counts SCALED to simulation duration."""
         if self.trial_idx is not None:
-            return {layer: len(self.data.spike_times[layer][self.trial_idx])
-                   for layer in self.data.spike_times}
-        return self.data.get_mean_spike_counts()
+            raw_counts = {layer: len(self.data.spike_times[layer][self.trial_idx])
+                         for layer in self._get_comparable_layers()}
+        else:
+            raw_counts = {layer: count for layer, count in self.data.get_mean_spike_counts().items()
+                         if layer in self._get_comparable_layers()}
+        # Scale counts to simulation duration
+        return {layer: count / self._duration_ratio for layer, count in raw_counts.items()}
     
     def _compute_target_firing_rates(self) -> Dict[str, float]:
+        """Firing rates are duration-independent (spikes/second)."""
         if self.trial_idx is not None:
-            duration_s = self.data.duration_ms / 1000.0
-            return {layer: count / duration_s for layer, count in self._target_spike_counts.items()}
-        return self.data.get_mean_firing_rates()
+            duration_s = self.experimental_duration_ms / 1000.0
+            return {layer: len(self.data.spike_times[layer][self.trial_idx]) / duration_s
+                   for layer in self._get_comparable_layers()}
+        rates = self.data.get_mean_firing_rates()
+        return {layer: rate for layer, rate in rates.items() if layer in self._get_comparable_layers()}
     
     def _compute_target_histograms(self, bin_size_ms: float = 10.0) -> Dict[str, np.ndarray]:
         histograms = {}
@@ -194,6 +265,10 @@ class SupervisedObjective:
     
     def __call__(self, spike_data: Dict[str, np.ndarray], 
                  lfp_data: Optional[np.ndarray] = None) -> float:
+        activity_penalty = self._activity_floor_penalty(spike_data)
+        if activity_penalty > 0:
+            return activity_penalty  # Return early with huge penalty if network is dead
+        
         loss = 0.0
         if self.weights.get('isi_ks', 0) > 0:
             loss += self.weights['isi_ks'] * self._isi_ks_loss(spike_data)
@@ -207,11 +282,68 @@ class SupervisedObjective:
             loss += self.weights['lfp_correlation'] * self._lfp_loss(lfp_data)
         return loss
     
+    def _activity_floor_penalty(self, spike_data: Dict[str, np.ndarray]) -> float:
+        penalty = 0.0
+        
+        # Check thalamus firing to determine expected number of response events
+        thal_spikes = spike_data.get('thalamus', np.array([]))
+        if len(thal_spikes) == 0:
+            return 1e6  # No thalamic input
+        
+        # Count thalamic burst events (clusters of spikes)
+        thal_burst_times = self._find_burst_times(thal_spikes, cluster_window=10.0)
+        n_thal_bursts = len(thal_burst_times)
+        
+        if n_thal_bursts == 0:
+            return 1e6
+        
+        # Cortex must respond to at least 50% of thalamic bursts
+        min_responses_required = max(2, n_thal_bursts // 2)
+        
+        for layer in self._get_comparable_layers():
+            if layer not in spike_data:
+                penalty += 1e6
+                continue
+            
+            spikes = spike_data[layer]
+            if len(spikes) == 0:
+                penalty += 1e6
+                continue
+            
+            # Count cortical response events (bursts)
+            cortical_burst_times = self._find_burst_times(spikes, cluster_window=15.0)
+            n_cortical_responses = len(cortical_burst_times)
+            
+            # PROHIBITIVE penalty if cortex doesn't respond to multiple thalamic inputs
+            if n_cortical_responses < min_responses_required:
+                missing_responses = min_responses_required - n_cortical_responses
+                penalty += 1e5 * (2 ** missing_responses)  # Exponential penalty
+        
+        return penalty
+    
+    def _find_burst_times(self, spikes: np.ndarray, cluster_window: float = 10.0) -> List[float]:
+        """Find distinct burst/event times by clustering spikes."""
+        if len(spikes) == 0:
+            return []
+        
+        sorted_spikes = np.sort(spikes)
+        burst_times = [sorted_spikes[0]]
+        
+        for spike in sorted_spikes[1:]:
+            # If spike is far enough from last burst, it's a new burst
+            if spike - burst_times[-1] > cluster_window:
+                burst_times.append(spike)
+        
+        return burst_times
+    
     def _isi_ks_loss(self, spike_data: Dict[str, np.ndarray]) -> float:
+        """KS test on inter-spike interval distributions (duration-independent)."""
         from scipy.stats import ks_2samp
         total_loss, n_layers = 0.0, 0
         
         for layer in self._target_isis:
+            if layer in self.excluded_layers:
+                continue
             target_isis = self._target_isis[layer]
             if layer not in spike_data or len(spike_data[layer]) < 2:
                 total_loss += 3.0
@@ -237,24 +369,31 @@ class SupervisedObjective:
         return (total_loss / max(n_layers, 1)) * 100
     
     def _spike_ks_loss(self, spike_data: Dict[str, np.ndarray]) -> float:
+        """KS test on normalized spike time distributions (duration-independent)."""
         from scipy.stats import ks_2samp
         total_loss, n_layers = 0.0, 0
         
         for layer in self._target_spike_times:
-            target_spikes = self._target_spike_times[layer]
-            if layer not in spike_data:
+            target_spikes = self._target_spike_times[layer]  # Already normalized to [0, 1]
+            if layer not in spike_data or layer in self.excluded_layers:
                 total_loss += 3.0
                 n_layers += 1
                 continue
             
             sim_spikes = spike_data[layer]
-            if len(target_spikes) < 2 or len(sim_spikes) < 2:
+            # Normalize simulation spikes to [0, 1] range
+            if len(sim_spikes) > 0:
+                sim_spikes_norm = sim_spikes / self.duration_ms
+            else:
+                sim_spikes_norm = sim_spikes
+            
+            if len(target_spikes) < 2 or len(sim_spikes_norm) < 2:
                 total_loss += 3.0
                 n_layers += 1
                 continue
             
             try:
-                stat, _ = ks_2samp(sim_spikes, target_spikes)
+                stat, _ = ks_2samp(sim_spikes_norm, target_spikes)
                 total_loss += stat
             except Exception:
                 total_loss += 3.0
@@ -336,6 +475,7 @@ class SupervisedObjective:
     def compute_all(self, spike_data: Dict[str, np.ndarray],
                     lfp_data: Optional[np.ndarray] = None) -> Dict[str, float]:
         components = {
+            'activity_floor': self._activity_floor_penalty(spike_data),
             'isi_ks': self._isi_ks_loss(spike_data),
             'spike_ks': self._spike_ks_loss(spike_data),
             'spike_count': self._spike_count_loss(spike_data),
@@ -351,12 +491,17 @@ class HybridObjective:
     
     def __init__(self, experimental_data: Optional['ExperimentalData'] = None,
                  supervised_weight: float = 0.5, trial_idx: Optional[int] = None,
-                 rule_based_target: Optional[TargetBehavior] = None):
+                 rule_based_target: Optional[TargetBehavior] = None,
+                 duration_ms: float = 100.0):
         self.rule_based = ObjectiveFunction(target=rule_based_target)
         self.supervised_weight = np.clip(supervised_weight, 0.0, 1.0)
         
         if experimental_data is not None:
-            self.supervised = SupervisedObjective(experimental_data=experimental_data, trial_idx=trial_idx)
+            self.supervised = SupervisedObjective(
+                experimental_data=experimental_data, 
+                trial_idx=trial_idx,
+                duration_ms=duration_ms
+            )
         else:
             self.supervised = None
             self.supervised_weight = 0.0
@@ -391,16 +536,19 @@ def create_objective(
     objective_type: str = 'rule-based',
     experimental_data: Optional['ExperimentalData'] = None,
     supervised_weight: float = 0.5,
-    trial_idx: Optional[int] = None
+    trial_idx: Optional[int] = None,
+    duration_ms: float = 100.0
 ) -> Union[ObjectiveFunction, SupervisedObjective, HybridObjective]:
     if objective_type == 'rule-based':
         return ObjectiveFunction()
     elif objective_type == 'supervised':
         if experimental_data is None:
             raise ValueError("supervised objective requires experimental_data")
-        return SupervisedObjective(experimental_data=experimental_data, trial_idx=trial_idx)
+        return SupervisedObjective(experimental_data=experimental_data, trial_idx=trial_idx,
+                                   duration_ms=duration_ms)
     elif objective_type == 'hybrid':
         return HybridObjective(experimental_data=experimental_data,
-                              supervised_weight=supervised_weight, trial_idx=trial_idx)
+                              supervised_weight=supervised_weight, trial_idx=trial_idx,
+                              duration_ms=duration_ms)
     else:
         raise ValueError(f"Unknown objective type: {objective_type}")
